@@ -15,4 +15,3 @@ After merge to **master**; remember to tag your merge commit:
 ```bash
 make push-tag
 ```
-
