@@ -1,0 +1,90 @@
+version: 2
+jobs:
+  build_image:
+    docker:
+      - image: alpine:3.7
+    steps:
+      - checkout
+      - run: apk update && apk add make curl tar
+      - restore_cache:
+          keys:
+            - dependency-cache-{{ .Revision }}
+      - setup_remote_docker
+      - run:
+          name: Install Docker client
+          command: |
+            set -x
+            VER="18.03.1-ce"
+            curl -L -o /tmp/docker-$VER.tgz https://download.docker.com/linux/static/stable/x86_64/docker-$VER.tgz
+            tar -xz -C /tmp -f /tmp/docker-$VER.tgz
+            mv /tmp/docker/* /usr/bin
+      - run:  make build-image
+  check_for_clubhouse_ticket_comment:
+    docker:
+      - image: vidsyhq/cli:latest
+        auth:
+          username: $DOCKER_USER
+          password: $DOCKER_PASS
+    steps:
+      - run: cli github check-comment --url=$CIRCLE_PULL_REQUEST --token=$VIDSY_BOT_GITHUB_TOKEN --text-contains=https://app.clubhouse.io/vidsy/story
+  check_version:
+    docker:
+      - image: buildpack-deps:trusty
+    steps:
+      - checkout
+      - run: make check-version
+  deploy:
+    docker:
+      - image: alpine:3.7
+    steps:
+      - checkout
+      - run: apk update && apk add make py-pip curl && pip install awscli
+      - restore_cache:
+          key: dependency-cache-{{ .Revision }}
+      - setup_remote_docker
+      - run:
+          name: Install Docker client
+          command: |
+            set -x
+            VER="18.03.1-ce"
+            curl -L -o /tmp/docker-$VER.tgz https://download.docker.com/linux/static/stable/x86_64/docker-$VER.tgz
+            tar -xz -C /tmp -f /tmp/docker-$VER.tgz
+            mv /tmp/docker/* /usr/bin
+      - run: make build-image
+      - deploy:
+          name: deploy
+          command: |
+            make push-to-ecr
+            make push-to-docker-hub
+
+workflows:
+  version: 2
+  install_test_deploy:
+    jobs:
+      - build_image:
+          context: org-aws-ecr
+          filters:
+            tags:
+              only: /[0-9]+\.[0-9]+\.[0-9]+/
+            branches:
+              ignore: master
+      - check_for_clubhouse_ticket_comment:
+          context: org-github-docker-hub
+          filters:
+            branches:
+              ignore: master
+      - check_version:
+          filters:
+            branches:
+              ignore: master
+      - deploy:
+          context: org-aws-ecr
+          requires:
+            - build_image
+            - check_version
+          filters:
+            tags:
+              only:
+                - /[0-9]+\.[0-9]+\.[0-9]+/
+            branches:
+              ignore: /.*/
