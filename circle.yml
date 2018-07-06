@@ -54,7 +54,6 @@ jobs:
       - deploy:
           name: deploy
           command: |
-            make push-to-ecr
             make push-to-docker-hub
 
 workflows:
